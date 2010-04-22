@@ -320,30 +320,16 @@ i915_gem_set_tiling(struct drm_device *dev, void *data,
 	mutex_lock(&dev->struct_mutex);
 	if (args->tiling_mode != obj_priv->tiling_mode ||
 	    args->stride != obj_priv->stride) {
-		/* We need to rebind the object if its current allocation
-		 * no longer meets the alignment restrictions for its new
-		 * tiling mode. Otherwise we can just leave it alone, but
-		 * need to ensure that any fence register is cleared.
-		 */
-		if (!i915_gem_object_fence_offset_ok(obj, args->tiling_mode))
-			ret = i915_gem_object_unbind(obj);
-		else if (obj_priv->fence_reg != I915_FENCE_REG_NONE)
-			ret = i915_gem_object_put_fence_reg(obj);
-		else
-			i915_gem_release_mmap(obj);
+		/* Change tiling parameter asynchronously to avoid
+		 * gpu stalls. */
+		obj_priv->fence_invalid = 1;
 
-		if (ret != 0) {
-			WARN(ret != -ERESTARTSYS,
-			     "failed to reset object for tiling switch");
-			args->tiling_mode = obj_priv->tiling_mode;
-			args->stride = obj_priv->stride;
-			goto err;
-		}
+		i915_gem_release_mmap(obj);
 
 		obj_priv->tiling_mode = args->tiling_mode;
 		obj_priv->stride = args->stride;
 	}
-err:
+
 	drm_gem_object_unreference(obj);
 	mutex_unlock(&dev->struct_mutex);
 

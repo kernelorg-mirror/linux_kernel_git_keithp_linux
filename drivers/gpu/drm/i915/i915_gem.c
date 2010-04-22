@@ -2535,6 +2535,8 @@ i915_gem_object_get_fence_reg(struct drm_gem_object *obj)
 	struct drm_i915_fence_reg *reg = NULL;
 	int ret;
 
+	BUG_ON(obj_priv->fence_invalid);
+
 	/* Just update our place in the LRU if our fence is getting used. */
 	if (obj_priv->fence_reg != I915_FENCE_REG_NONE) {
 		list_move_tail(&obj_priv->fence_list, &dev_priv->mm.fence_list);
@@ -2604,6 +2606,12 @@ i915_gem_object_adjust_fencing(struct drm_gem_object *obj)
 	struct drm_i915_gem_object *obj_priv = to_intel_bo(obj);
 	int ret;
 
+	if (obj_priv->fence_invalid) {
+		ret = i915_gem_object_put_fence_reg(obj);
+		if (ret != 0)
+			return ret;
+	}
+
 	if (!i915_gem_object_fence_offset_ok(obj, obj_priv->tiling_mode)) {
 		ret = i915_gem_object_unbind(obj);
 		if (ret != 0)
@@ -2670,6 +2678,8 @@ i915_gem_object_put_fence_reg(struct drm_gem_object *obj)
 {
 	struct drm_device *dev = obj->dev;
 	struct drm_i915_gem_object *obj_priv = to_intel_bo(obj);
+
+	obj_priv->fence_invalid = 0;
 
 	if (obj_priv->fence_reg == I915_FENCE_REG_NONE)
 		return 0;

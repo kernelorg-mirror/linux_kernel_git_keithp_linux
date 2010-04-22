@@ -706,6 +706,12 @@ struct drm_i915_gem_object {
 	 */
 	int fence_reg;
 
+	/**
+	 * Tiling changes can happen asynchronously to avoid gpu stalls.
+	 * This will be set if the current fencing may be invalid.
+	 */
+	int fence_invalid;
+
 	/** How many users have pinned this object in GTT space */
 	int pin_count;
 
