@@ -1272,18 +1272,10 @@ intel_pin_and_fence_fb_obj(struct drm_device *dev, struct drm_gem_object *obj)
 	if (ret != 0)
 		return ret;
 
-	/* Install a fence for tiled scan-out. Pre-i965 always needs a
-	 * fence, whereas 965+ only requires a fence if using
-	 * framebuffer compression.  For simplicity, we always install
-	 * a fence as the cost is not that onerous.
-	 */
-	if (obj_priv->fence_reg == I915_FENCE_REG_NONE &&
-	    obj_priv->tiling_mode != I915_TILING_NONE) {
-		ret = i915_gem_object_get_fence_reg(obj);
-		if (ret != 0) {
-			i915_gem_object_unpin(obj);
-			return ret;
-		}
+	ret = i915_gem_object_adjust_fencing(obj);
+	if (ret != 0) {
+		i915_gem_object_unpin(obj);
+		return ret;
 	}
 
 	return 0;

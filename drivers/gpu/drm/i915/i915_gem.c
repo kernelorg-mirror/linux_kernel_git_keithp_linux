@@ -974,6 +974,10 @@ i915_gem_pwrite_ioctl(struct drm_device *dev, void *data,
 		ret = i915_gem_phys_pwrite(dev, obj, args, file_priv);
 	else if (obj_priv->tiling_mode == I915_TILING_NONE &&
 		 dev->gtt_total != 0) {
+		ret = i915_gem_object_adjust_fencing(obj);
+		if (ret != 0)
+			return ret;
+
 		ret = i915_gem_gtt_pwrite_fast(dev, obj, args, file_priv);
 		if (ret == -EFAULT) {
 			ret = i915_gem_gtt_pwrite_slow(dev, obj, args,
@@ -1191,12 +1195,9 @@ int i915_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 			goto unlock;
 	}
 
-	/* Need a new fence register? */
-	if (obj_priv->tiling_mode != I915_TILING_NONE) {
-		ret = i915_gem_object_get_fence_reg(obj);
-		if (ret)
-			goto unlock;
-	}
+	ret = i915_gem_object_adjust_fencing(obj);
+	if (ret)
+		goto unlock;
 
 	pfn = ((dev->agp->base + obj_priv->gtt_offset) >> PAGE_SHIFT) +
 		page_offset;
@@ -2525,7 +2526,7 @@ static int i915_find_fence_reg(struct drm_device *dev)
  * It then sets up the reg based on the object's properties: address, pitch
  * and tiling format.
  */
-int
+static int
 i915_gem_object_get_fence_reg(struct drm_gem_object *obj)
 {
 	struct drm_device *dev = obj->dev;
@@ -2582,6 +2583,41 @@ i915_gem_object_get_fence_reg(struct drm_gem_object *obj)
 	trace_i915_gem_object_get_fence(obj, obj_priv->fence_reg,
 			obj_priv->tiling_mode);
 
+	return 0;
+}
+
+/**
+ * i915_gem_object_adjust_fencing - ensure correct fencing for an object
+ * @obj: object to map through a fence reg
+ *
+ * Tiling changes may be delayed untill fenced access is actually needed.
+ * Batchbuffer submitted via execbuf2 may not need a fence, so delaying
+ * gtt remapping and fence register changes (which all stall the gpu) as
+ * long as possible is beneficial.
+ *
+ * This function ensures that all delayed operations have been carried out and
+ * the object can be correctly accessed via fences.
+ */
+int
+i915_gem_object_adjust_fencing(struct drm_gem_object *obj)
+{
+	struct drm_i915_gem_object *obj_priv = to_intel_bo(obj);
+	int ret;
+
+	if (!i915_gem_object_fence_offset_ok(obj, obj_priv->tiling_mode)) {
+		ret = i915_gem_object_unbind(obj);
+		if (ret != 0)
+			return ret;
+		ret = i915_gem_object_bind_to_gtt(obj, 0);
+		if (ret != 0)
+			return ret;
+	}
+
+	if (obj_priv->tiling_mode != I915_TILING_NONE) {
+		ret = i915_gem_object_get_fence_reg(obj);
+		if (ret != 0)
+			return ret;
+	}
 	return 0;
 }
 
@@ -3359,7 +3395,7 @@ i915_gem_object_pin_and_relocate(struct drm_gem_object *obj,
 	 * properly handle blits to/from tiled surfaces.
 	 */
 	if (need_fence) {
-		ret = i915_gem_object_get_fence_reg(obj);
+		ret = i915_gem_object_adjust_fencing(obj);
 		if (ret != 0) {
 			if (ret != -EBUSY && ret != -ERESTARTSYS)
 				DRM_ERROR("Failure to install fence: %d\n",
