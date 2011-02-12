@@ -1917,7 +1917,11 @@ intel_dp_init(struct drm_device *dev, int output_reg)
 				dev_priv->no_aux_handshake = intel_dp->dpcd[3] &
 					DP_NO_AUX_HANDSHAKE_LINK_TRAINING;
 		} else {
-			DRM_ERROR("failed to retrieve link info\n");
+			/* if this fails, presume the device is a ghost */
+			DRM_INFO("failed to retrieve link info, disabling eDP\n");
+			intel_dp_encoder_destroy(&intel_dp->base.base);
+			intel_dp_destroy(&intel_connector->base);
+			return;
 		}
 		if (!was_on)
 			ironlake_edp_panel_off(dev);
