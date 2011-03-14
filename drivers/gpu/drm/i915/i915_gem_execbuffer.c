@@ -388,6 +388,10 @@ i915_gem_execbuffer_relocate_entry(struct drm_i915_gem_object *obj,
 		uint32_t __iomem *reloc_entry;
 		void __iomem *reloc_page;
 
+		/* We can't wait for rendering with pagefaults disabled */
+		if (obj->active && in_atomic())
+			return -EFAULT;
+
 		ret = i915_gem_object_set_to_gtt_domain(obj, 1);
 		if (ret)
 			return ret;
@@ -463,13 +467,15 @@ i915_gem_execbuffer_relocate(struct drm_device *dev,
 	struct drm_i915_gem_object *obj;
 	int ret;
 
+	pagefault_disable();
 	list_for_each_entry(obj, objects, exec_list) {
 		ret = i915_gem_execbuffer_relocate_object(obj, eb);
 		if (ret)
-			return ret;
+			break;
 	}
+	pagefault_enable();
 
-	return 0;
+	return ret;
 }
 
 static int
